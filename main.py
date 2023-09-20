@@ -2,8 +2,10 @@ import pygame
 import math
 import random
 import sys
+import time
 from pygame import mixer
 from Paddle import Paddle
+from Paddle_AI import Paddle_AI
 from Ball import Ball
 
 WIDTH = 1280
@@ -29,7 +31,7 @@ class GameMain:
             'wall_hit': mixer.Sound('sounds/wall_hit.wav')
         }
 
-        self.player1 = Paddle(self.screen, 30, 90, 15, 60, WIDTH, HEIGHT, 1)
+        self.player1 = Paddle_AI(self.screen, 30, 90, 15, 60, WIDTH, HEIGHT, 1)
         self.player2 = Paddle(self.screen, WIDTH - 30,
                               HEIGHT - 90, 15, 60, WIDTH, HEIGHT, 2)
 
@@ -48,6 +50,9 @@ class GameMain:
         # 4. 'done' (the game is over, with a victor, ready for restart)
 
         self.game_state = 'start'
+
+        self.mode = 'randomai'
+        self.lastmove = time.time()
 
         self.small_font = pygame.font.Font('./interbold.ttf', 36)
         self.large_font = pygame.font.Font('./interbold.ttf', 72)
@@ -70,8 +75,46 @@ class GameMain:
             str(self.player1_score), False, (51, 255, 255))
         self.t_p2_score = self.score_font.render(
             str(self.player2_score), False, (255, 51, 51))
+        self.t_mode = self.small_font.render(
+            str(self.player2_score), False, (0, 255, 0))
 
         self.max_frame_rate = 60
+
+     # Moving Random AI
+    def randomai_move(self):
+        current_time = time.time()
+        if current_time - self.lastmove >= 1:
+            choices = ["up", "down"]
+            direction = random.choice(choices)
+            if direction == "up":
+                move = +PADDLE_SPEED
+                self.player1.dy = move
+            elif direction == "down":
+                move = -PADDLE_SPEED
+                self.player1.dy = move
+            self.lastmove = time.time()
+
+    # Strong AI
+    def strongai_move(self):
+        current_time = time.time()
+        if self.player1.rect.y < self.ball.rect.y:
+            direction = +PADDLE_SPEED
+            if current_time - self.lastmove >= 1:
+                if self.ball.rect.y - self.player1.rect.y < 100:
+                    self.player1.dy = direction*0.3
+                else:
+                    self.player1.dy = direction
+                self.lastmove = time.time()
+        elif self.player1.rect.y > self.ball.rect.y:
+            direction = -PADDLE_SPEED
+            if current_time - self.lastmove >= 1:
+                if self.player1.rect.y - self.ball.rect.y < 100:
+                    self.player1.dy = direction*0.3
+                else:
+                    self.player1.dy = direction
+                self.lastmove = time.time()
+        else:
+            direction = 0
 
     def update(self, dt):
         if self.game_state == "serve":
@@ -80,7 +123,13 @@ class GameMain:
                 self.ball.dx = random.uniform(420, 600)
             else:
                 self.ball.dx = -random.uniform(420, 600)
+
         elif self.game_state == 'play':
+            if self.mode == 'randomai':
+                self.randomai_move()
+            elif self.mode == 'strongai':
+                self.strongai_move()
+
             if self.ball.Collides(self.player1):
                 self.ball.dx = -self.ball.dx * 1.03  # reflect speed multiplier
                 self.ball.rect.x = self.player1.rect.x + 15
@@ -118,7 +167,10 @@ class GameMain:
                 self._SwitchPlayer(1)
                 self.player2_score += 1
                 self.music_channel.play(self.sounds_list['score'])
-                if self.player2_score == WINNING_SCORE:
+                if self.player2_score == WINNING_SCORE and self.mode == 'randomai':
+                    self._WinningPlayer(2)
+                    self.game_state = 'pass-randomai'
+                elif self.player2_score == WINNING_SCORE and self.mode == 'strongai':
                     self._WinningPlayer(2)
                     self.game_state = 'done'
                 else:
@@ -156,7 +208,22 @@ class GameMain:
                         self.game_state = 'serve'
                     elif self.game_state == 'serve':
                         self.game_state = 'play'
+                    elif self.game_state == 'pass-randomai':
+                        self.mode = 'strongai'
+                        self.game_state = 'serve'
+                        self.ball.Reset()
+
+                        # reset score
+                        self.player1_score = 0
+                        self.player2_score = 0
+
+                        if self.winning_player == 1:
+                            self._SwitchPlayer(2)
+                        else:
+                            self._SwitchPlayer(1)
+
                     elif self.game_state == 'done':
+                        self.mode = 'randomai'
                         self.game_state = 'serve'
                         self.ball.Reset()
 
@@ -171,12 +238,12 @@ class GameMain:
 
         # continuous input
         key = pygame.key.get_pressed()
-        if key[pygame.K_w]:
-            self.player1.dy = -PADDLE_SPEED
-        elif key[pygame.K_s]:
-            self.player1.dy = PADDLE_SPEED
-        else:
-            self.player1.dy = 0
+        # if key[pygame.K_w]:
+        #     self.player1.dy = -PADDLE_SPEED
+        # elif key[pygame.K_s]:
+        #     self.player1.dy = PADDLE_SPEED
+        # else:
+        #     self.player1.dy = 0
         if key[pygame.K_UP]:
             self.player2.dy = -PADDLE_SPEED
         elif key[pygame.K_DOWN]:
@@ -226,6 +293,7 @@ class GameMain:
             self.screen.blit(self.t_press_restart, text_rect)
 
         self.DisplayScore()
+        self.DisplayMode()
 
         self.player1.render()
         self.player2.render()
@@ -238,6 +306,16 @@ class GameMain:
             str(self.player2_score), False, (255, 51, 51))
         self.screen.blit(self.t_p1_score, (WIDTH/2 - 70, HEIGHT/3))
         self.screen.blit(self.t_p2_score, (WIDTH / 2 + 30, HEIGHT / 3))
+
+    def DisplayMode(self):
+        if self.mode == 'randomai':
+            self.t_mode = self.small_font.render(
+                "random AI", False, (0, 255, 0))
+            self.screen.blit(self.t_mode, (WIDTH/2 - 90, HEIGHT/1.5))
+        else:
+            self.t_mode = self.large_font.render(
+                "strong AI", False, (255, 0, 0))
+            self.screen.blit(self.t_mode, (WIDTH/2 - 150, HEIGHT/1.5))
 
 
 if __name__ == '__main__':
